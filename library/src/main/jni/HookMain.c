@@ -16,16 +16,13 @@ static uint32_t kAccPreCompiled = 0x00200000;
 
 static jfieldID fieldArtMethod = NULL;
 
-// Android 12+
-#ifndef __ANDROID_API_S__
-#define __ANDROID_API_S__ 31
-#endif
 
 void Java_lab_galaxy_yahfa_HookMain_init(JNIEnv *env, jclass clazz, jint sdkVersion) {
     SDKVersion = sdkVersion;
     jclass classExecutable;
     LOGI("init to SDK %d", sdkVersion);
     switch (sdkVersion) {
+        case __ANDROID_API_S_L__:
         case __ANDROID_API_S__:
             kAccPreCompiled = 0x00800000;
         case __ANDROID_API_R__:
@@ -37,16 +34,11 @@ void Java_lab_galaxy_yahfa_HookMain_init(JNIEnv *env, jclass clazz, jint sdkVers
             OFFSET_ArtMehod_in_Object = 0;
             OFFSET_access_flags_in_ArtMethod = 4;
             //OFFSET_dex_method_index_in_ArtMethod = 4*3;
-            if(sdkVersion == __ANDROID_API_S__)
-            {
-                // Android 12, download system image from https://dl.google.com/developers/android/sc/images/ota/redfin-ota-spp1.210122.020.a3-b74909a0.zip
-                // Unzip and take system.img, mount this image as ext4, get art lib at path below
-                // /apex/com.android.art/lib64/libart.so
-                // 4 int, two short...
+            if (sdkVersion >= __ANDROID_API_S__)
                 OFFSET_entry_point_from_quick_compiled_code_in_ArtMethod =
-                    roundUpToPtrSize(16) + pointer_size;
-            }
-            else OFFSET_entry_point_from_quick_compiled_code_in_ArtMethod =
+                    roundUpToPtrSize(4 * 3 + 2 * 2) + pointer_size;
+            else
+                OFFSET_entry_point_from_quick_compiled_code_in_ArtMethod =
                     roundUpToPtrSize(4 * 4 + 2 * 2) + pointer_size;
             break;
         case __ANDROID_API_O_MR1__:
@@ -159,11 +151,15 @@ static int replaceMethod(void *fromMethod, void *toMethod, int isBackup) {
         }
         // MakeInitializedClassesVisiblyInitialized is called explicitly
         // entry of jni methods would not be set to jni trampoline after hooked
-//        if (SDKVersion <= __ANDROID_API_Q__) {
+
+        // do not set native flag
+        // https://github.com/PAGalaxyLab/YAHFA/issues/151
+        // hook would fail on debug mode though
+        if (SDKVersion <= __ANDROID_API_Q__) {
             // We don't set kAccNative on R+ because they will try to load from real native method pointer instead of entry_point_from_quick_compiled_code_.
             // Ref: https://cs.android.com/android/platform/superproject/+/android-11.0.0_r3:art/runtime/art_method.h;l=844;bpv=1;bpt=1
             access_flags |= kAccNative;
-//        }
+        }
         setFlags(fromMethod, access_flags);
         LOGI("change access flags from 0x%x to 0x%x", old_flags, access_flags);
     }
